@@ -11,7 +11,7 @@ export async function DELETE(
     if (isNaN(mealId)) {
       return NextResponse.json({ error: "Invalid meal id" }, { status: 400 });
     }
-    deleteMeal(mealId);
+    await deleteMeal(mealId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/meals/[id] error:", error);

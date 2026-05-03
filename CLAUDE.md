@@ -41,19 +41,17 @@ The estimate Claude returns includes a `confidence` field (`high`/`medium`/`low`
 
 ### Storage
 
-`lib/db.ts` is a singleton `better-sqlite3` connection with WAL mode. Schema is created via `CREATE TABLE IF NOT EXISTS`; column additions use a tiny in-place migration pattern — `PRAGMA table_info(meals)` is checked on each connect and any missing column is added with `ALTER TABLE`. The `confidence` column was added this way; follow the same pattern for new columns.
+`lib/db.ts` uses `@neondatabase/serverless` (Neon Postgres over HTTP), connected via `DATABASE_URL`. The HTTP-based driver is required for Vercel — connection-pool drivers don't work in serverless functions. The same connection is used in local dev; there is no separate dev/prod path.
 
-The DB file lives at `data/meals.db` relative to `process.cwd()`; the `data/` dir is created lazily.
+All query functions in `lib/db-queries.ts` are **async** and call `await ensureSchema()` first. `ensureSchema()` is memoized per cold container, so the `CREATE TABLE IF NOT EXISTS` runs at most once per warm function instance.
 
-Images are stored as base64 in the `meals.image_data` column. This keeps the app deployment-trivial but means the DB grows quickly — the client-side compression step is what makes it tolerable.
-
-`next.config.ts` sets `serverExternalPackages: ["better-sqlite3"]`. Without this, the Turbopack bundler tries to bundle the native `.node` binary and fails.
+Images are stored as base64 in the `meals.image_data` text column. This keeps the app deployment-trivial but means the DB grows quickly — the client-side compression step in `CameraCapture` is what makes it tolerable. If image storage becomes a concern, move to Vercel Blob and store only the URL in `image_data`.
 
 ### Env loading (important gotcha)
 
 Anthropic clients are constructed via `getApiKey()` from `lib/env.ts` **inside each request handler**, not at module top-level. Reason: under Next.js 16 + Turbopack, `process.env.ANTHROPIC_API_KEY` is set to an empty string before `.env.local` is loaded, which (a) silently breaks `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })` at module load with a confusing "Could not resolve authentication method" error, and (b) defeats the default `dotenv.config()` because dotenv won't overwrite existing keys.
 
-`lib/env.ts` works around this with `dotenv.config({ override: true })`. **Do not** revert to reading `process.env.ANTHROPIC_API_KEY` directly in route files, and do not move the client construction back to module scope.
+`lib/env.ts` works around this with `dotenv.config({ override: true })`. `lib/db.ts` applies the same workaround for `DATABASE_URL`. **Do not** revert to reading these vars directly at module scope. On Vercel both vars are injected normally and the dotenv calls are no-ops.
 
 ### Pages and routing
 

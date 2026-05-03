@@ -12,8 +12,10 @@ export async function POST(request: NextRequest) {
     const endDate = new Date().toISOString().split("T")[0];
     const startDate = new Date(Date.now() - days * 86_400_000).toISOString().split("T")[0];
 
-    const meals = getMealsForDateRange(startDate, endDate);
-    const dailyTotals = getDailyTotalsForRange(startDate, endDate);
+    const [meals, dailyTotals] = await Promise.all([
+      getMealsForDateRange(startDate, endDate),
+      getDailyTotalsForRange(startDate, endDate),
+    ]);
 
     if (meals.length === 0) {
       return NextResponse.json({

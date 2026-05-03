@@ -6,8 +6,10 @@ export async function GET(request: NextRequest) {
   const date = searchParams.get("date") ?? new Date().toISOString().split("T")[0];
 
   try {
-    const meals = getMealsForDate(date);
-    const totals = getDailyTotalsForDate(date);
+    const [meals, totals] = await Promise.all([
+      getMealsForDate(date),
+      getDailyTotalsForDate(date),
+    ]);
     return NextResponse.json({ meals, totals });
   } catch (error) {
     console.error("GET /api/meals error:", error);
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
     const validConfidence = ["high", "medium", "low"].includes(confidence) ? confidence : null;
 
     const date = new Date().toISOString().split("T")[0];
-    const meal = createMeal({
+    const meal = await createMeal({
       date,
       image_data: image_data ?? null,
       food_name,

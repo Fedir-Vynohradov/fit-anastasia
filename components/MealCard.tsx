@@ -15,7 +15,7 @@ const confidenceStyle: Record<Confidence, string> = {
 };
 
 export default function MealCard({ meal, onDelete }: MealCardProps) {
-  const time = new Date(meal.timestamp.replace(" ", "T") + "Z").toLocaleTimeString([], {
+  const time = new Date(meal.timestamp).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
