@@ -1,65 +1,178 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
+import BrandHeader from "@/components/BrandHeader";
+import DateNav from "@/components/DateNav";
+import CameraCapture from "@/components/CameraCapture";
+import MacroRings from "@/components/MacroRings";
+import MealCard from "@/components/MealCard";
+import { Meal, DailyTotals, EMPTY_TOTALS, DEFAULT_GOALS } from "@/lib/types";
+
+type UIState = "idle" | "preview" | "analyzing";
+
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export default function HomePage() {
+  const [uiState, setUiState] = useState<UIState>("idle");
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [meals, setMeals] = useState<Meal[]>([]);
+  const [totals, setTotals] = useState<DailyTotals>(EMPTY_TOTALS);
+  const [error, setError] = useState<string | null>(null);
+  const [today, setToday] = useState(todayLocal());
+
+  const fetchDay = useCallback(async (date: string) => {
+    try {
+      const res = await fetch(`/api/meals?date=${date}`);
+      const data = await res.json();
+      setMeals(data.meals ?? []);
+      setTotals(data.totals ?? EMPTY_TOTALS);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDay(today);
+  }, [today, fetchDay]);
+
+  const handleCapture = (base64: string) => {
+    setCapturedImage(base64);
+    setUiState("preview");
+    setError(null);
+  };
+
+  const handleAnalyze = async () => {
+    if (!capturedImage) return;
+    setUiState("analyzing");
+    setError(null);
+
+    try {
+      const analyzeRes = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: capturedImage }),
+      });
+
+      if (!analyzeRes.ok) {
+        const errData = await analyzeRes.json();
+        throw new Error(errData.error ?? "Analysis failed");
+      }
+
+      const { estimate } = await analyzeRes.json();
+
+      const saveRes = await fetch("/api/meals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...estimate, image_data: capturedImage }),
+      });
+
+      if (!saveRes.ok) throw new Error("Failed to save meal");
+
+      await fetchDay(today);
+      setCapturedImage(null);
+      setUiState("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setUiState("preview");
+    }
+  };
+
+  const handleRetake = () => {
+    setCapturedImage(null);
+    setUiState("idle");
+    setError(null);
+  };
+
+  const handleDelete = async (id: number) => {
+    await fetch(`/api/meals/${id}`, { method: "DELETE" });
+    await fetchDay(today);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="px-4 pt-2">
+      <BrandHeader />
+      <DateNav date={today} onChange={setToday} todayStr={todayLocal()} />
+
+      {/* Macro card */}
+      <div className="bg-card rounded-3xl shadow-sm border border-[color:var(--border)] px-3 py-5 mt-3 mb-5">
+        <MacroRings totals={totals} goals={DEFAULT_GOALS} />
+      </div>
+
+      {/* Capture / preview / analyzing */}
+      {uiState === "idle" && (
+        <CameraCapture onCapture={handleCapture} />
+      )}
+
+      {uiState === "preview" && capturedImage && (
+        <div className="flex flex-col gap-3">
+          <div className="relative w-full aspect-square rounded-3xl overflow-hidden bg-card border border-[color:var(--border)]">
+            <Image src={capturedImage} alt="Food preview" fill className="object-cover" unoptimized />
+          </div>
+          {error && (
+            <div className="bg-terracotta-soft/30 border border-[color:var(--terracotta)]/30 text-[color:var(--terracotta)] text-sm rounded-2xl px-4 py-3">
+              {error}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={handleRetake}
+              className="flex-1 py-3.5 rounded-2xl border border-[color:var(--border-strong)] text-ink-soft font-semibold touch-manipulation"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              Retake
+            </button>
+            <button
+              onClick={handleAnalyze}
+              className="flex-1 py-3.5 rounded-2xl bg-terracotta text-white font-semibold shadow-sm hover:opacity-90 touch-manipulation"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              Analyze
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      )}
+
+      {uiState === "analyzing" && (
+        <div className="flex flex-col items-center gap-4 py-10">
+          {capturedImage && (
+            <div className="relative w-32 h-32 rounded-3xl overflow-hidden opacity-70 border border-[color:var(--border)]">
+              <Image src={capturedImage} alt="Analyzing" fill className="object-cover" unoptimized />
+            </div>
+          )}
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-7 h-7 border-[3px] border-terracotta border-t-transparent rounded-full animate-spin" />
+            <p className="text-ink-soft text-sm font-medium">Analyzing your food…</p>
+          </div>
         </div>
-      </main>
+      )}
+
+      {/* Meals list */}
+      {meals.length > 0 && uiState === "idle" && (
+        <div className="mt-7">
+          <div className="flex items-baseline justify-between mb-3 px-1">
+            <h2 className="font-serif text-xl font-bold text-ink">
+              {today === todayLocal() ? "Today's meals" : "Meals"}
+            </h2>
+            <span className="text-xs text-ink-mute">
+              {meals.length} logged
+            </span>
+          </div>
+          <div className="flex flex-col gap-3">
+            {meals.map((meal) => (
+              <MealCard key={meal.id} meal={meal} onDelete={handleDelete} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {meals.length === 0 && uiState === "idle" && (
+        <div className="mt-8 text-center text-ink-mute">
+          <p className="text-sm">No meals logged yet</p>
+          <p className="text-xs mt-1">Snap a photo to get started</p>
+        </div>
+      )}
     </div>
   );
 }
